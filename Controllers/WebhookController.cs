@@ -66,7 +66,7 @@ namespace ZaloOAWebhook.Controllers
                 {
                     return StatusCode(500, new Response<string>(500, false, MessageReponse.FAIL, 500, "Error SQL", "", "", ex.Message));
                 }
-                
+
 
                 if (OAAccount == null || !OAAccount.Any())
                 {
@@ -126,14 +126,14 @@ namespace ZaloOAWebhook.Controllers
                 _errorMessage = ex.Message;
                 return false;
             }
-           
+
             return true;
         }
 
         private async Task<UserData?> GetDetailInforCustomer(string userId, string accesstoken, string refreshToken, string secretKey,
                                                             string appId)
         {
-            var client = new RestClient(_config["APIZaloOAUrl:GetDetailInforCustomer"] +"?data={\"user_id\":\"" + userId + "\"}");
+            var client = new RestClient(_config["APIZaloOAUrl:GetDetailInforCustomer"] + "?data={\"user_id\":\"" + userId + "\"}");
             var request = new RestRequest("", Method.Get);
 
             request.AddHeader("access_token", accesstoken);
@@ -172,7 +172,7 @@ namespace ZaloOAWebhook.Controllers
 
         private async Task<string> GetAccessTokenByRefreshToken(string refreshToken, string secretKey, string appId)
         {
-            var client = new RestClient(_config["APIZaloOAUrl:GetAccessTokenByRefreshToken"] ??string.Empty);
+            var client = new RestClient(_config["APIZaloOAUrl:GetAccessTokenByRefreshToken"] ?? string.Empty);
             var request = new RestRequest("", Method.Post);
 
             request.AddHeader("secret_key", secretKey);
