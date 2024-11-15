@@ -1,0 +1,48 @@
+﻿# Thư mục build tạm thời
+bin/
+obj/
+
+# Các file log
+*.log
+*.nlog
+*.log.*
+logs/
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Visual Studio files
+.vscode/
+.vs/
+.vscode/settings.json
+
+# Tệp cấu hình môi trường
+appsettings.*.json
+
+# Tệp bảo mật
+secrets.json
+
+# Các file dữ liệu không cần thiết hoặc các file tạo ra trong quá trình chạy
+*.db
+*.mdf
+*.ldf
+
+# Thư mục chứa các file nén và publish
+publish/
+out/
+
+# .NET
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Tệp cài đặt của hệ điều hành
+.DS_Store
+Thumbs.db
+
+# Git directories
+.idea/

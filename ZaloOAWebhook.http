@@ -1,0 +1,6 @@
+@ZaloOAWebhook_HostAddress = http://localhost:5176
+
+GET {{ZaloOAWebhook_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
