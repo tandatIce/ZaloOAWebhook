@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Mvc;
 using ZaloOAWebhook.Constant;
 using ZaloOAWebhook.Models;
 using Unidecode.NET;
-using Microsoft.Data.SqlClient;
 using RestSharp;
 using Newtonsoft.Json;
 using ZaloOAWebhook.Class.Response;
@@ -58,24 +57,20 @@ namespace ZaloOAWebhook.Controllers
 
                 IEnumerable<ZaloOaAccount> OAAccount = Enumerable.Empty<ZaloOaAccount>();
 
-                try
-                {
-                    OAAccount = await _ZaloOAAccountRepo.GetAccountByAppId(appId);
-                }
-                catch (SqlException ex)
-                {
-                    return StatusCode(500, new Response<string>(500, false, MessageReponse.FAIL, 500, "Error SQL", "", "", ex.Message));
-                }
-
+                OAAccount = await _ZaloOAAccountRepo.GetAccountByAppId(appId);
 
                 if (OAAccount == null || !OAAccount.Any())
                 {
-                    return StatusCode(400, new Response<string>(400, false, MessageReponse.FAIL, 400, "Can not find Account OA"));
+                    _errorMessage = "Can not find Account OA";
+                    _logger.LogError(_errorMessage);
+                    return StatusCode(400, new Response<string>(400, false, MessageReponse.FAIL, 400, _errorMessage));
                 }
 
                 if (OAAccount.Count() > 1)
                 {
-                    return BadRequest(new Response<string>(400, false, MessageReponse.FAIL, 400, "More than one Zalo OA account found"));
+                    _errorMessage = "More than one Zalo OA account found";
+                    _logger.LogError(_errorMessage);
+                    return BadRequest(new Response<string>(400, false, MessageReponse.FAIL, 400, _errorMessage));
                 }
 
                 /*
@@ -88,50 +83,100 @@ namespace ZaloOAWebhook.Controllers
                 string refreshToken = account.RefreshToken;
                 string secretKey = account.Secret_key;
                 string databaseName = account.DatabaseName;
+                DateTime updateDate = account.UpdateDate;
                 string textRequest = messeageText.Unidecode().ToLower();
-                string textBatDau = "Bắt đầu".Unidecode().ToLower();
+                string textBatDau = MessageSentFromUser.BAT_DAU.Unidecode().ToLower();
+                string textDiem = MessageSentFromUser.DIEM.Unidecode().ToLower();
+
+                accessToken = await CheckExpireAccessToken(updateDate, accessToken, refreshToken, secretKey, appId);
+
+                if (accessToken == string.Empty)
+                {
+                    _logger.LogError(_errorMessage);
+                    return StatusCode(400, new Response<string>(400, false, MessageReponse.FAIL, 400, _errorMessage));
+                }
 
                 if (textRequest.Equals(textBatDau))  //case Zalo user send "Bat Dat" to Zalo OA, handle Update userID customer
                 {
 
-                    bool result = await UpdateUserIdCustomer(userId, accessToken, refreshToken, secretKey, appId, databaseName);
+                    bool result = await UpdateUserIdCustomer(userId, accessToken, databaseName);
                     if (result) return Ok();
 
+                    _logger.LogError(_errorMessage);
                     return StatusCode(400, new Response<string>(400, false, MessageReponse.FAIL, 400, _errorMessage));
                 }
 
-                return StatusCode(400, new Response<string>(400, false, MessageReponse.FAIL, 400, "No messages match"));
+                if (textRequest.Equals(textDiem))  //case Zalo user send "Diem" to Zalo OA, handle send point to ZaloUser
+                {
+                    return await SendPointToCustomer(accessToken, userId, databaseName);
+                }
+
+
+                return Ok();
 
             }
-
-            return StatusCode(400, new Response<string>(400, false, MessageReponse.FAIL, 400, "No events match"));
+            _errorMessage = "No events match";
+            _logger.LogError(_errorMessage);
+            return StatusCode(400, new Response<string>(400, false, MessageReponse.FAIL, 400, _errorMessage));
         }
 
-        private async Task<bool> UpdateUserIdCustomer(string userId, string accesstoken, string refreshToken, string secretKey, string appId,
-                                                    string databaseName)
+        private async Task<bool> UpdateUserIdCustomer(string userId, string accesstoken, string databaseName)
         {
-            UserData? inforCustomer = await GetDetailInforCustomer(userId, accesstoken, refreshToken, secretKey, appId);
+            UserData? inforCustomer = await GetDetailInforCustomer(userId, accesstoken);
 
             if (inforCustomer == null) return false;
 
             //update userID by phone Number
             string phoneNumber = inforCustomer.shared_info.phone;
 
-            try
-            {
-                await _customerRepo.updateUserIdByPhoneNumber(phoneNumber, databaseName, userId);
-            }
-            catch (SqlException ex)
-            {
-                _errorMessage = ex.Message;
-                return false;
-            }
+            await _customerRepo.updateUserIdByPhoneNumber(phoneNumber, databaseName, userId);
 
             return true;
         }
+        private async Task<IActionResult> SendPointToCustomer(string accessToken, string userId, string databaseName)
+        {
+            double point = 0;
+            //get point from database
+            Point? pointRow = await _customerRepo.GetPointCurrentByUserId(userId, databaseName);
 
-        private async Task<UserData?> GetDetailInforCustomer(string userId, string accesstoken, string refreshToken, string secretKey,
-                                                            string appId)
+            if (pointRow == null)
+            {
+                _errorMessage = "Can not find data about point";
+                _logger.LogError(_errorMessage);
+                return StatusCode(400, new Response<string>(400, false, MessageReponse.FAIL, 400, _errorMessage));
+            }
+
+            point = pointRow.P_SAVE ?? 0;
+
+            var client = new RestClient(_config["APIZaloOAUrl:SendAdviseTextMessage"] ?? string.Empty);
+            var request = new RestRequest("", Method.Post);
+
+            request.AddHeader("access_token", accessToken);
+
+            RecipientAdviseMessage recipient = new() { user_id = userId };
+            AdviseMessage adviseMessage = new() { text = $"Số điểm của quý khách hiện tại là: {point}" };
+            AdviseMessageRequest bodyRequest=new() { message = adviseMessage ,recipient=recipient};
+
+            request.AddJsonBody(bodyRequest);
+
+            var response = await client.ExecuteAsync(request);
+            if (response.IsSuccessful)
+            {
+                var responseConvert = JsonConvert.DeserializeObject<SendAdviseMessageAPIResponse>(response.Content ?? String.Empty);
+
+                if (responseConvert?.error != 0)
+                {
+                    _errorMessage = responseConvert?.error + ", " + responseConvert?.message ?? string.Empty;
+                    _logger.LogError(_errorMessage);
+                    return StatusCode(400, new Response<string>(400, false, MessageReponse.FAIL, 400, _errorMessage));
+                }
+                return Ok();
+            }
+
+            _logger.LogError($"{response.StatusCode} - {response.StatusDescription}");
+            return StatusCode(400, new Response<string>(400, false, MessageReponse.FAIL, 400, response.StatusDescription ?? string.Empty));
+        }
+        private async Task<UserData?> GetDetailInforCustomer(string userId, string accesstoken)
         {
             var client = new RestClient(_config["APIZaloOAUrl:GetDetailInforCustomer"] + "?data={\"user_id\":\"" + userId + "\"}");
             var request = new RestRequest("", Method.Get);
@@ -149,17 +194,6 @@ namespace ZaloOAWebhook.Controllers
 
                 _logger.LogError($"Error: {responseConvert?.error} - {responseConvert?.message}");
 
-                if (responseConvert?.error == -216)
-                {   //case access token not valid
-
-                    string newAccessToken = await GetAccessTokenByRefreshToken(refreshToken, secretKey, appId);
-
-                    if (newAccessToken == string.Empty) return null;
-
-                    return await GetDetailInforCustomer(userId, newAccessToken, "", "", "");
-
-                }
-
                 _errorMessage = responseConvert?.message ?? string.Empty;
                 return null;
             }
@@ -168,6 +202,17 @@ namespace ZaloOAWebhook.Controllers
             _errorMessage = response.StatusDescription ?? string.Empty;
             return null;
 
+        }
+        private async Task<string> CheckExpireAccessToken(DateTime updateDate, string accessToken, string refreshToken, string secretKey, string appId)
+        {
+            DateTime now = DateTime.Now;
+            TimeSpan duration = now - updateDate;
+            double totalHours = duration.TotalHours;
+
+            if (totalHours < 25) { return accessToken; }
+            // case access token expire
+            string newAccessToken = await GetAccessTokenByRefreshToken(refreshToken, secretKey, appId);
+            return newAccessToken;
         }
 
         private async Task<string> GetAccessTokenByRefreshToken(string refreshToken, string secretKey, string appId)
@@ -198,15 +243,8 @@ namespace ZaloOAWebhook.Controllers
                 string newRefreshToken = responseConvert?.refresh_token ?? string.Empty;
 
                 //update accesstoken, refresstoken
-                try
-                {
-                    await _ZaloOAAccountRepo.UpdateRefeshAndAccessTokenByAppId(appId, newAccessToken, newRefreshToken);
-                }
-                catch (SqlException ex)
-                {
-                    _errorMessage = ex.Message;
-                    return string.Empty;
-                }
+
+                await _ZaloOAAccountRepo.UpdateRefeshAndAccessTokenByAppId(appId, newAccessToken, newRefreshToken);
 
                 return newAccessToken ?? string.Empty;
 

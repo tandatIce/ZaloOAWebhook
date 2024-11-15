@@ -1,5 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Serilog;
+﻿using Serilog;
 using ZaloOAWebhook.Context;
 using ZaloOAWebhook.IRepository;
 using ZaloOAWebhook.Middleware;

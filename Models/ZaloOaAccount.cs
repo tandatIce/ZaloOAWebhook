@@ -23,4 +23,5 @@ public partial class ZaloOaAccount
     public string AccessToken { get; set; } = null!;
 
     public string Secret_key { get; set; } = null!;
+    public DateTime UpdateDate { get; set; }
 }
