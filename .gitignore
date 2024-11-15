@@ -22,6 +22,7 @@ logs/
 
 # Tệp cấu hình môi trường
 appsettings.*.json
+appsettings.json
 
 # Tệp bảo mật
 secrets.json
